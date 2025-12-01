@@ -10,6 +10,10 @@ spec:
   ports:
     - port: 80
       name: http
+      targetPort: 80
+  selector:
+    app: wordpress
+    tier: frontend
   ##
   # create service selector labels here
   # hint: match the deployment's labels (app: wordpress, tier: frontend)
@@ -20,6 +24,8 @@ kind: ConfigMap
 metadata:
   name: wordpress
 data:
+  host: "wordpress-mysql"
+  user: "wordpress"
   ##
   # create non-sensitive data attributes
   # host: wordpress-mysql
@@ -35,12 +41,20 @@ metadata:
     tier: frontend
 spec:
   replicas: 3
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: frontend
   ##
   # create deployment selector here
   # app: wordpress
   # tier: frontend
   ##
   template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: frontend
     ##
     # create pod metadata labels here (match the selectorLabels)
     ##
@@ -49,12 +63,26 @@ spec:
       - image: wordpress:6.2.1-apache
         name: wordpress
         env:
+          - name: WORDPRESS_DB_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: wordpress
+                key: host
+          - name: WORDPRESS_DB_USER
+            valueFrom:
+              configMapKeyRef:
+                name: wordpress
+                key: user
         ##
         # mount non-sensitive environment vars from configmap using configMapKeyRef
         # WORDPRESS_DB_HOST (from wordpress configmap, key: host)
         # WORDPRESS_DB_USER (from wordpress configmap, key: user)
         ##
-
+          - name: WORDPRESS_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: database
+                key: user-password
         ##
         # mount sensitive environment vars from secret using secretKeyRef
         # WORDPRESS_DB_PASSWORD (from database secret, key: user-password)
@@ -66,13 +94,31 @@ spec:
         # add volumeMounts inside the container spec above
         # mount path: /var/www/html
         ##
+        volumeMounts:
+          - name: data
+            mountPath: /var/www/html
 
       ##
       # add volumes at the pod spec level (same indentation as containers)
       # reference the PVC: wp-pv-claim
       ##
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wp-pv-claim
 
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pv-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
 ##
 # create persistent volume claim here
 # name: wp-pv-claim
